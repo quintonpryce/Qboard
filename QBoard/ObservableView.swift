@@ -7,6 +7,8 @@
 //
 
 // A modification of https://github.com/brynbodayle/BABFrameObservingInputAccessoryView
+// Shoutout to Altai for some great work initially converting this to swift.
+// https://github.com/altaibayar
 
 import UIKit
 

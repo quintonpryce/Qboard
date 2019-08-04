@@ -8,7 +8,7 @@
 
 import UIKit
 
-/** Provides view that will follow the keyboard, interactively or not. This view should be added to the bottom of your view with
+/** Provides a view that will follow the keyboard, interactively or not. This view should be added to the bottom of your view with
     a leading, trailing, and bottom constraint to either the superview or the safe area. The top constraint will need to be snapped
     to your textField or the very most bottom view. Ensure that the height constraint on this view is not required (ie. priority is not 1000). 
  */
@@ -22,12 +22,18 @@ class KeyboardView: UIView {
      
     # Usage
     ```
-    keyboardView.inputAccessoryView = myTextField.inputAccessoryView
+    keyboardView.setInputAccessoryView(myTextField)
     ```
      */
     @IBInspectable var autoSetup: Bool = true
     
     private var heightConstraint: NSLayoutConstraint?
+    
+    private var textField: UITextField?
+    
+    /// This value allows us to start dismissing the keyboard as soon as the drag hits the textField.
+    /// Rather than dismissing only when the user hits the keyboard.
+    private var heightToAccessory: CGFloat = 0
     
     override func awakeFromNib() {
         super.awakeFromNib()
@@ -41,6 +47,13 @@ class KeyboardView: UIView {
         removeKeyboardNotifications()
     }
     
+    // Manually sets the textField's input accessory. Use this for multiple textFields or if the method cannot find your textField.
+    public func setInputAccessoryView(_ textField: UITextField) {
+        self.textField = textField
+        heightToAccessory = frame.minY - textField.frame.minY
+        textField.inputAccessoryView = inputAccessoryView
+    }
+    
     private func addHeightConstraint() {
         let heightConstraint = NSLayoutConstraint(item: self, attribute: .height, relatedBy: .equal, toItem: nil, attribute: .height, multiplier: 1, constant: 0)
         heightConstraint.priority = .required
@@ -49,11 +62,12 @@ class KeyboardView: UIView {
     }
     
     private func addInputAccessoryView() {
-        if let textField = findTextField() {
-            textField.inputAccessoryView = inputAccessoryView
-        } else {
+        guard let textField = findTextField() else {
             assertionFailure("Could not find a textField in the superview. You will need to set the inputAccessoryView manually.")
+            return
         }
+        
+        setInputAccessoryView(textField)
     }
     
     private func findTextField() -> UITextField? {
@@ -65,14 +79,23 @@ class KeyboardView: UIView {
     }
     
     public override var inputAccessoryView: UIView? {
-        let observableAccessoryView = ObservableView(frame: frame)
+        let observableFrame = CGRect(
+            x: frame.origin.x,
+            y: frame.origin.y,
+            width: frame.width,
+            height: frame.height + heightToAccessory
+        )
         
-        observableAccessoryView.onFrameChange = { observerFrame in
-            let frameUpdateHeight = UIScreen.main.bounds.height - observerFrame.minY
+        let observableAccessoryView = ObservableView(frame: observableFrame)
+        
+        observableAccessoryView.onFrameChange = { [weak self] observerFrame in
+            guard let strongSelf = self else { return }
+            let frameUpdateHeight = UIScreen.main.bounds.height - observerFrame.minY - strongSelf.heightToAccessory
             UIView.animate(withDuration: 0.0, animations: { [weak self] in
                 self?.heightConstraint?.constant = frameUpdateHeight
             })
         }
+        
         return observableAccessoryView
     }
 }
@@ -99,8 +122,13 @@ private extension KeyboardView {
         let keyboardHeight = keyboardSizeValue.cgRectValue.height
         
         UIView.animate(withDuration: duration.doubleValue, delay: 0, options: animationCurve, animations: { [weak self] in
-            self?.heightConstraint?.constant = keyboardHeight
-            self?.superview?.layoutIfNeeded()
+            guard let strongSelf = self else {
+                assertionFailure("Failure to hold on to textField or self during animation.")
+                return
+            }
+            
+            strongSelf.heightConstraint?.constant = keyboardHeight - strongSelf.heightToAccessory
+            strongSelf.superview?.layoutIfNeeded()
         })
     }
     
@@ -111,8 +139,12 @@ private extension KeyboardView {
         let animationCurve:UIView.AnimationOptions = UIView.AnimationOptions(rawValue: animationCurveRaw)
         
         UIView.animate(withDuration: duration.doubleValue, delay: 0, options: animationCurve, animations: { [weak self] in
-            self?.heightConstraint?.constant = 0
-            self?.superview?.layoutIfNeeded()
+            guard let strongSelf = self else {
+                assertionFailure("Failure to hold on to self during animation.")
+                return
+            }
+            strongSelf.heightConstraint?.constant = 0
+            strongSelf.superview?.layoutIfNeeded()
         })
     }
 }
